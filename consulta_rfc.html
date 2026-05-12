@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Consulta RFC</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f4f5f7;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      border: 1px solid #e2e4e8;
+      padding: 2rem;
+      width: 100%;
+      max-width: 540px;
+    }
+
+    h1 { font-size: 18px; font-weight: 500; color: #111; margin-bottom: 0.25rem; }
+    .subtitle { font-size: 13px; color: #666; margin-bottom: 1.5rem; }
+
+    label { display: block; font-size: 13px; color: #555; margin-bottom: 6px; }
+
+    .input-row { display: flex; gap: 8px; margin-bottom: 1.25rem; }
+
+    input[type="text"] {
+      flex: 1;
+      height: 38px;
+      border: 1px solid #d0d5dd;
+      border-radius: 8px;
+      padding: 0 12px;
+      font-size: 14px;
+      font-family: monospace;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input[type="text"]:focus { border-color: #4f46e5; }
+
+    button {
+      height: 38px;
+      padding: 0 1.25rem;
+      background: #4f46e5;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    button:hover { background: #4338ca; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; background: #4f46e5; }
+
+    .divider { border: none; border-top: 1px solid #eee; margin: 1.25rem 0; }
+
+    .campo { margin-bottom: 1rem; }
+    .campo-valor {
+      background: #f8f9fb;
+      border: 1px solid #e2e4e8;
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-size: 14px;
+      color: #111;
+      min-height: 38px;
+      word-break: break-word;
+    }
+    .campo-valor.placeholder { color: #aaa; font-style: italic; }
+
+    .badge { display: inline-block; font-size: 12px; padding: 3px 10px; border-radius: 20px; font-weight: 500; }
+    .badge-success { background: #dcfce7; color: #166534; }
+    .badge-error   { background: #fee2e2; color: #991b1b; }
+
+    #estado { font-size: 13px; color: #666; margin-bottom: 0.75rem; min-height: 20px; }
+
+    #raw-toggle {
+      font-size: 12px; color: #4f46e5; cursor: pointer;
+      background: none; border: none; padding: 0; height: auto;
+      text-decoration: underline; margin-top: 0.5rem;
+    }
+
+    #raw-box {
+      display: none;
+      margin-top: 0.75rem;
+      background: #1e1e2e;
+      color: #cdd6f4;
+      border-radius: 8px;
+      padding: 1rem;
+      font-size: 12px;
+      font-family: monospace;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 260px;
+      overflow-y: auto;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid #ccc;
+      border-top-color: #4f46e5;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h1>Consulta de datos fiscales</h1>
+  <p class="subtitle">Ingresa un RFC para obtener los datos del contribuyente vía satpi.mx</p>
+
+  <label for="rfc-input">RFC</label>
+  <div class="input-row">
+    <input
+      id="rfc-input"
+      type="text"
+      maxlength="13"
+      placeholder="Ej. XAXX010101000"
+      oninput="onRfcChange()"
+      onkeydown="if(event.key==='Enter') consultar()"
+    />
+    <button id="btn-consultar" onclick="consultar()" disabled>Consultar</button>
+  </div>
+
+  <div id="resultado" style="display:none;">
+    <hr class="divider" />
+    <p id="estado"></p>
+
+    <div class="campo">
+      <label>Razón social / Nombre</label>
+      <div id="razon-social" class="campo-valor placeholder">—</div>
+    </div>
+
+    <div style="display:flex; gap:12px;">
+      <div class="campo" style="flex:1;">
+        <label>Código postal fiscal</label>
+        <div id="cp" class="campo-valor placeholder">—</div>
+      </div>
+      <div class="campo" style="flex:1;">
+        <label>Tipo de persona</label>
+        <div id="tipo" class="campo-valor placeholder">—</div>
+      </div>
+    </div>
+
+    <div class="campo">
+      <label>Régimen fiscal</label>
+      <div id="regimen" class="campo-valor placeholder">—</div>
+    </div>
+
+    <button id="raw-toggle" onclick="toggleRaw()" style="display:none;">Ver respuesta completa</button>
+    <pre id="raw-box"></pre>
+  </div>
+</div>
+
+<script>
+  // ⚠️ Cambia TU_IP_VPS por la IP real de tu servidor
+  const PROXY_URL = "http://TU_IP_VPS:5000/consulta_rfc";
+
+  function onRfcChange() {
+    const rfc = document.getElementById("rfc-input").value.trim().toUpperCase();
+    document.getElementById("rfc-input").value = rfc;
+    document.getElementById("btn-consultar").disabled = rfc.length < 12;
+  }
+
+  async function consultar() {
+    const rfc = document.getElementById("rfc-input").value.trim().toUpperCase();
+    if (rfc.length < 12) return;
+
+    const estado    = document.getElementById("estado");
+    const resultado = document.getElementById("resultado");
+    const rawBox    = document.getElementById("raw-box");
+    const rawToggle = document.getElementById("raw-toggle");
+
+    resultado.style.display = "block";
+    estado.innerHTML = '<span class="spinner"></span> Consultando…';
+    limpiarCampos();
+    rawToggle.style.display = "none";
+    rawBox.style.display = "none";
+
+    try {
+      const res  = await fetch(`${PROXY_URL}/${rfc}`);
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); } catch { data = null; }
+
+      rawBox.textContent = data ? JSON.stringify(data, null, 2) : text;
+      rawToggle.style.display = "inline-block";
+
+      if (!res.ok || data?.error) {
+        estado.innerHTML = '<span class="badge badge-error">Error</span> ' + (data?.error || "No se encontró el RFC");
+        return;
+      }
+
+      estado.innerHTML = '<span class="badge badge-success">✓ Encontrado</span>';
+      llenarCampos(data);
+
+    } catch (e) {
+      estado.innerHTML = '<span class="badge badge-error">Error de conexión</span> Verifica que el proxy esté corriendo';
+      rawBox.textContent = e.toString();
+      rawToggle.style.display = "inline-block";
+    }
+  }
+
+  function llenarCampos(d) {
+    // satpi.mx devuelve: nombre, cp, regimen (puede variar, ajusta si es necesario)
+    set("razon-social", d?.nombre       || d?.razon_social  || d?.RazonSocial);
+    set("cp",           d?.cp           || d?.codigo_postal  || d?.CodigoPostal);
+    set("regimen",      d?.regimen      || d?.regimen_fiscal || d?.RegimenFiscal);
+    set("tipo",         d?.tipo_persona || d?.tipo          || (d?.rfc?.length === 12 ? "Persona moral" : "Persona física"));
+  }
+
+  function set(id, value) {
+    const el = document.getElementById(id);
+    if (value) {
+      el.textContent = value;
+      el.classList.remove("placeholder");
+    } else {
+      el.textContent = "—";
+      el.classList.add("placeholder");
+    }
+  }
+
+  function limpiarCampos() {
+    ["razon-social","cp","regimen","tipo"].forEach(id => set(id, null));
+  }
+
+  function toggleRaw() {
+    const box = document.getElementById("raw-box");
+    const btn = document.getElementById("raw-toggle");
+    const visible = box.style.display === "block";
+    box.style.display = visible ? "none" : "block";
+    btn.textContent   = visible ? "Ver respuesta completa" : "Ocultar respuesta";
+  }
+</script>
+
+</body>
+</html>
